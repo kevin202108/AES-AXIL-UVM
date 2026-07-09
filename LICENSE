@@ -19,11 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
--------------------------------------------------------------------------------
-Third-party / references (not bundled, attribution only):
-  * The AES-128 composite-field S-box architecture follows
-    X. Zhang & K. Parhi, "High-Speed VLSI Architectures for the AES Algorithm".
-  * UVM (Accellera, Apache-2.0) and any EDA simulator are NOT included in this
-    repository; users supply their own. Test vectors follow the public
-    NIST FIPS-197 / AESAVS known-answer structure.
