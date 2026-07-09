@@ -1,0 +1,60 @@
+# =============================================================================
+#  Keep the repo to SOURCE ONLY. Never commit EDA-tool binaries, libraries,
+#  vendor-branded reports, or raw tool logs (they embed vendor copyright,
+#  install paths and version banners). Share results as text/tables in docs/.
+# =============================================================================
+
+# ---- Synopsys VCS ----
+simv
+simv.daidir/
+csrc/
+ucli.key
+vc_hdrs.h
+.vcs_*
+AN.DB/
+DVEfiles/
+*.vpd
+vcs.key
+
+# ---- Cadence Xcelium ----
+xcelium.d/
+xrun.history
+INCA_libs/
+.simvision/
+waves.shm/
+xmsim.*
+
+# ---- Mentor/Siemens Questa ----
+work/
+transcript
+vsim.wlf
+modelsim.ini
+
+# ---- Coverage databases & vendor-branded HTML reports ----
+# (commit the NUMBERS in docs/, not the generated HTML/CSS/JS templates)
+*.vdb/
+cov_work/
+urgReport/
+urgReport_txt/
+*.cm.vdb/
+
+# ---- Open-source sims ----
+obj_dir/
+*.vvp
+
+# ---- Waveforms ----
+*.vcd
+*.fsdb
+*.shm/
+novas*.*
+verdiLog/
+
+# ---- Logs (may contain vendor banners / absolute paths) ----
+*.log
+logs/
+
+# ---- misc ----
+*.tmp
+*.bak
+*.swp
+.DS_Store
