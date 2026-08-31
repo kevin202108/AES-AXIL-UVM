@@ -13,13 +13,23 @@
 cd "$(dirname "$0")/.." || exit 1     # -> AES_AXI_Lite root (filelist paths are relative)
 
 CM="line+cond+fsm+tgl+branch"
-TESTS="axil_smoke_test axil_aes_test axil_wstrb_test axil_wstrb_sweep_test \
+TESTS="axil_smoke_test axil_aes_test axil_dpi_test axil_wstrb_test axil_wstrb_sweep_test \
        axil_full_test axil_bp_test axil_b2b_test axil_err_test axil_busy_test \
        axil_xinj_test axil_stagger_test axil_reset_test axil_reset_sweep_test \
        axil_reset_hs_test axil_reset_exhaustive_test axil_kat_test"
 
-echo "### compiling (VCS + UVM 1.2 + coverage) ..."
+echo "### C model standalone selftest ..."
+if command -v gcc >/dev/null 2>&1; then
+    gcc -Wall -Wextra -O2 -o aes128_selftest \
+        c_model/aes128.c c_model/aes128_selftest.c -I c_model || exit 1
+    ./aes128_selftest || exit 1
+else
+    echo "(gcc not found — skipping pure-C selftest)"
+fi
+
+echo "### compiling (VCS + UVM 1.2 + DPI-C + coverage) ..."
 vcs -full64 -sverilog -ntb_opts uvm-1.2 -timescale=1ns/1ps -f sim/filelist.f \
+    c_model/aes128.c \
     -debug_access+all -cm $CM -l comp.log
 if [ ! -x ./simv ]; then
     echo "*** COMPILE FAILED - tail of comp.log ***"; tail -30 comp.log; exit 1

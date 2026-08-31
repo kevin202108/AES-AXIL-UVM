@@ -140,7 +140,9 @@ class axil_aes_seq extends axil_base_seq;
     endtask
 endclass
 
-// ---- random regression: N blocks vs independent golden model ---------------
+// ---- random regression: N blocks, dual golden (SV + C via DPI-C) ------------
+//  Per block: SV aes_ref_model and C dpi_encrypt128 must agree; DUT vs C.
+//  Requires c_model/aes128.c linked (same as axil_dpi_test).
 class axil_rand_seq extends axil_base_seq;
     `uvm_object_utils(axil_rand_seq)
 
@@ -171,30 +173,42 @@ class axil_rand_seq extends axil_base_seq;
     task body();
         int pass = 0;
         int fail = 0;
-        bit [127:0] key, pt, exp, got;
+        int dual_fail = 0;
+        bit [127:0] key, pt, exp_sv, exp_c, got;
 
         void'($value$plusargs("NUM_BLOCKS=%d", num_blocks));
-        `uvm_info("RAND", $sformatf("random regression: %0d blocks", num_blocks), UVM_NONE)
+        `uvm_info("RAND", $sformatf("random dual-oracle regression: %0d blocks", num_blocks), UVM_NONE)
 
         for (int n = 0; n < num_blocks; n++) begin
             key = {$urandom, $urandom, $urandom, $urandom};
             pt  = {$urandom, $urandom, $urandom, $urandom};
-            exp = aes_ref_model::encrypt128(key, pt);   // independent oracle
+            exp_sv = aes_ref_model::encrypt128(key, pt);
+            exp_c  = dpi_encrypt128(key, pt);
+            if (exp_c !== exp_sv) begin
+                dual_fail++;
+                fail++;
+                `uvm_error("RAND", $sformatf(
+                    "block %0d dual-golden MISMATCH\n  key=%032h\n  pt =%032h\n  C  =%032h\n  SV =%032h",
+                    n, key, pt, exp_c, exp_sv))
+                continue;  // do not run DUT if oracles disagree
+            end
             run_block(key, pt, got);
-            if (got === exp) begin
+            if (got === exp_c) begin
                 pass++;
                 `uvm_info("RAND", $sformatf("block %0d PASS ct=%032h", n, got), UVM_HIGH)
             end else begin
                 fail++;
-                `uvm_error("RAND", $sformatf("block %0d MISMATCH\n  key=%032h\n  pt =%032h\n  got=%032h\n  exp=%032h",
-                                             n, key, pt, got, exp))
+                `uvm_error("RAND", $sformatf(
+                    "block %0d DUT MISMATCH\n  key=%032h\n  pt =%032h\n  got=%032h\n  exp=%032h",
+                    n, key, pt, got, exp_c))
             end
         end
 
-        `uvm_info("RAND", $sformatf("RANDOM TEST: %0d blocks  pass=%0d  fail=%0d",
-                                    num_blocks, pass, fail), UVM_NONE)
+        `uvm_info("RAND", $sformatf(
+            "RANDOM TEST: %0d blocks  pass=%0d  fail=%0d  dual_fail=%0d",
+            num_blocks, pass, fail, dual_fail), UVM_NONE)
         if (fail == 0)
-            `uvm_info ("RAND", "*** RANDOM TEST PASSED ***", UVM_NONE)
+            `uvm_info ("RAND", "*** RANDOM TEST PASSED (dual oracle) ***", UVM_NONE)
         else
             `uvm_error("RAND", "*** RANDOM TEST FAILED ***")
     endtask
@@ -466,8 +480,12 @@ class axil_busy_seq extends axil_base_seq;
 endclass
 
 // ---- NIST AESAVS KAT (Known-Answer Test) -----------------------------------
-//  Reads 259 vectors (VarTxt 128 + VarKey 128 + 3 corners) from .dat files and
-//  checks each DUT ciphertext against the expected value. Reuses run_block().
+//  Reads 259 vectors (VarTxt 128 + VarKey 128 + 3 corners) from .dat files.
+//  Per vector (dual oracle + file known-answer, same order as axil_rand_seq):
+//    1) SV aes_ref_model vs C dpi_encrypt128 must agree
+//    2) live oracles must match kat_ct.dat
+//    3) DUT ciphertext vs C expected (and thus vs file)
+//  Requires c_model/aes128.c linked (same as axil_dpi_test / axil_rand_test).
 //  Add files kat_key.dat / kat_pt.dat / kat_ct.dat (bare names) in EDA Playground.
 class axil_kat_seq extends axil_rand_seq;
     `uvm_object_utils(axil_kat_seq)
@@ -483,26 +501,59 @@ class axil_kat_seq extends axil_rand_seq;
     endfunction
 
     task body();
-        bit [127:0] got;
-        int pass = 0, fail = 0;
+        bit [127:0] got, exp_sv, exp_c;
+        int pass = 0, fail = 0, dual_fail = 0, file_fail = 0;
 
         $readmemh("kat_key.dat", keys);
         $readmemh("kat_pt.dat",  pts);
         $readmemh("kat_ct.dat",  cts);
-        `uvm_info("KAT", $sformatf("running %0d NIST KAT vectors", KAT_N), UVM_NONE)
+        `uvm_info("KAT", $sformatf(
+            "running %0d NIST KAT vectors (dual oracle + file)", KAT_N), UVM_NONE)
 
         for (int i = 0; i < KAT_N; i++) begin
-            run_block(keys[i], pts[i], got);
-            if (got === cts[i]) pass++;
-            else begin
+            exp_sv = aes_ref_model::encrypt128(keys[i], pts[i]);
+            exp_c  = dpi_encrypt128(keys[i], pts[i]);
+
+            // 1) dual golden: C vs SV
+            if (exp_c !== exp_sv) begin
+                dual_fail++;
                 fail++;
-                `uvm_error("KAT", $sformatf("vector %0d MISMATCH key=%032h pt=%032h got=%032h exp=%032h",
-                                            i, keys[i], pts[i], got, cts[i]))
+                `uvm_error("KAT", $sformatf(
+                    "vector %0d dual-golden MISMATCH\n  key=%032h\n  pt =%032h\n  C  =%032h\n  SV =%032h",
+                    i, keys[i], pts[i], exp_c, exp_sv))
+                continue;  // do not run DUT if oracles disagree
+            end
+
+            // 2) live oracles vs NIST file known-answer
+            if (exp_c !== cts[i]) begin
+                file_fail++;
+                fail++;
+                `uvm_error("KAT", $sformatf(
+                    "vector %0d oracle vs kat_ct.dat MISMATCH\n  key=%032h\n  pt =%032h\n  C  =%032h\n  file=%032h",
+                    i, keys[i], pts[i], exp_c, cts[i]))
+                continue;
+            end
+
+            // 3) DUT vs C (implies vs file when steps 1–2 pass)
+            run_block(keys[i], pts[i], got);
+            if (got === exp_c) begin
+                pass++;
+                `uvm_info("KAT", $sformatf("vector %0d PASS ct=%032h", i, got), UVM_HIGH)
+            end else begin
+                fail++;
+                `uvm_error("KAT", $sformatf(
+                    "vector %0d DUT MISMATCH\n  key=%032h\n  pt =%032h\n  got=%032h\n  exp=%032h",
+                    i, keys[i], pts[i], got, exp_c))
             end
         end
-        `uvm_info("KAT", $sformatf("NIST KAT: %0d vectors  pass=%0d  fail=%0d", KAT_N, pass, fail), UVM_NONE)
-        if (fail == 0) `uvm_info ("KAT", "*** NIST KAT TEST PASSED ***", UVM_NONE)
-        else           `uvm_error("KAT", "*** NIST KAT TEST FAILED ***")
+
+        `uvm_info("KAT", $sformatf(
+            "NIST KAT: %0d vectors  pass=%0d  fail=%0d  dual_fail=%0d  file_fail=%0d",
+            KAT_N, pass, fail, dual_fail, file_fail), UVM_NONE)
+        if (fail == 0)
+            `uvm_info ("KAT", "*** NIST KAT TEST PASSED (dual oracle) ***", UVM_NONE)
+        else
+            `uvm_error("KAT", "*** NIST KAT TEST FAILED ***")
     endtask
 endclass
 
@@ -552,5 +603,64 @@ class axil_xinj_seq extends axil_base_seq;
         check_no_x(8'h08, 32'h00000000);
 
         `uvm_info("XINJ", "*** X-INJECTION TEST DONE ***", UVM_NONE)
+    endtask
+endclass
+
+// ---- DPI-C minimum check: C model vs FIPS / SV golden / DUT ----------------
+//  Step 1: aes128_selfcheck() in C (FIPS-197 + all-zero)
+//  Step 2: DPI encrypt vs hard-coded FIPS ciphertext
+//  Step 3: DPI encrypt vs aes_ref_model (dual golden)
+//  Step 4: one DUT encryption vs C expected (end-to-end co-sim)
+//  Requires c_model/aes128.c linked (EDA Playground: Design tab "aes128.c").
+class axil_dpi_seq extends axil_rand_seq;
+    `uvm_object_utils(axil_dpi_seq)
+
+    function new(string name = "axil_dpi_seq");
+        super.new(name);
+    endfunction
+
+    task body();
+        bit [127:0] key = 128'h000102030405060708090a0b0c0d0e0f;
+        bit [127:0] pt  = 128'h00112233445566778899aabbccddeeff;
+        bit [127:0] exp_fips = 128'h69c4e0d86a7b0430d8cdb78070b4c55a;
+        bit [127:0] exp_c, exp_sv, got_dut;
+        int sc;
+
+        // --- 1) C built-in self-check ---
+        sc = aes128_selfcheck();
+        if (sc == 0)
+            `uvm_info("DPI", "aes128_selfcheck() PASS", UVM_NONE)
+        else
+            `uvm_error("DPI", $sformatf("aes128_selfcheck() FAIL code=%0d", sc))
+
+        // --- 2) DPI vs FIPS-197 known answer ---
+        exp_c = dpi_encrypt128(key, pt);
+        `uvm_info("DPI", $sformatf("C model CT = %032h", exp_c), UVM_NONE)
+        if (exp_c === exp_fips)
+            `uvm_info("DPI", "DPI vs FIPS-197 PASS", UVM_NONE)
+        else
+            `uvm_error("DPI", $sformatf("DPI vs FIPS FAIL got=%032h exp=%032h",
+                                        exp_c, exp_fips))
+
+        // --- 3) dual golden: C vs SV ---
+        exp_sv = aes_ref_model::encrypt128(key, pt);
+        if (exp_c === exp_sv)
+            `uvm_info("DPI", "dual golden (C vs SV) PASS", UVM_NONE)
+        else
+            `uvm_error("DPI", $sformatf("dual golden FAIL C=%032h SV=%032h",
+                                        exp_c, exp_sv))
+
+        // --- 4) DUT vs C model ---
+        run_block(key, pt, got_dut);
+        if (got_dut === exp_c)
+            `uvm_info("DPI", "DUT vs C model PASS", UVM_NONE)
+        else
+            `uvm_error("DPI", $sformatf("DUT vs C FAIL got=%032h exp_c=%032h",
+                                        got_dut, exp_c))
+
+        if (sc == 0 && exp_c === exp_fips && exp_c === exp_sv && got_dut === exp_c)
+            `uvm_info("DPI", "*** DPI-C MINIMUM TEST PASSED ***", UVM_NONE)
+        else
+            `uvm_error("DPI", "*** DPI-C MINIMUM TEST FAILED ***")
     endtask
 endclass

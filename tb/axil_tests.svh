@@ -365,3 +365,17 @@ class axil_stagger_test extends axil_base_test;
         phase.drop_objection(this, "stagger");
     endtask
 endclass
+
+// ---- DPI-C minimum test (C golden + dual check + one DUT block) ------------
+//  EDA Playground: Design tab aes128.c + sim/run.bash (Use run.bash shell script).
+//  Fallback without script: Compile Options aes128.c, +UVM_TESTNAME=axil_dpi_test
+class axil_dpi_test extends axil_base_test;
+    `uvm_component_utils(axil_dpi_test)
+    function new(string name, uvm_component parent); super.new(name, parent); endfunction
+    task run_phase(uvm_phase phase);
+        axil_dpi_seq seq = axil_dpi_seq::type_id::create("seq");
+        phase.raise_objection(this, "dpi");
+        seq.start(env.agent.seqr);
+        phase.drop_objection(this, "dpi");
+    endtask
+endclass
