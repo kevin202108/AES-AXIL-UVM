@@ -17,10 +17,15 @@ assertions, fault injection, and a one-command regression.
   outputs, with SLVERR for out-of-range access.
 - **Independent oracle**: a table-based AES-128 golden model (separate from the
   core's composite-field implementation) checks every ciphertext.
-- **18 UVM tests**: directed (FIPS-197), constrained-random (vs golden),
-  **259 NIST AESAVS known-answer vectors**, full WSTRB byte-enable sweep,
-  AXI backpressure, AW/W stagger, back-to-back, reset-in-the-middle, exhaustive
-  reset sweep, X-injection, and an error-response/protocol test.
+- **Dual-oracle DPI-C**: a second, independent AES-128 C reference model
+  (`c_model/`) is imported into the testbench via SystemVerilog DPI-C. Every
+  random block is checked against both the SV and C golden models before the
+  DUT is compared, so the two independent oracles must agree first.
+- **19 UVM tests**: directed (FIPS-197), DPI-C co-simulation, constrained-random
+  (dual oracle), **259 NIST AESAVS known-answer vectors (KAT)**, full WSTRB
+  byte-enable sweep, AXI backpressure, AW/W stagger, back-to-back,
+  reset-in-the-middle, exhaustive reset sweep, X-injection, and an
+  error-response/protocol test.
 - **Coverage**: functional, FSM, and SVA assertion coverage **100%**; DUT line
   99% / branch 95% (full code-coverage sign-off with documented waivers).
 - **Proven checkers**: fault injection demonstrates the scoreboard catches both
@@ -32,8 +37,8 @@ assertions, fault injection, and a one-command regression.
 
 | Metric | Value |
 |--------|-------|
-| Tests passing | **18 / 18** (UVM_ERROR = 0) |
-| Random vectors vs golden | 2000 blocks, 0 mismatches |
+| Tests passing | **19 / 19** (UVM_ERROR = 0; includes `axil_dpi_test`) |
+| Random vectors (dual oracle: SV + C, then DUT) | 2000 blocks, 0 mismatches |
 | NIST AESAVS KAT | 259 / 259 |
 | Functional / FSM / Assert coverage | 100% |
 | DUT line / branch coverage | 99.19% / 95.16% |
@@ -69,14 +74,16 @@ This is a **UVM-1.2** testbench, so it needs a UVM-capable simulator.
 
 **Free, in browser — [EDA Playground](https://www.edaplayground.com/):**
 paste `rtl/` into the Design pane and `tb/` into the Testbench pane, pick VCS
-or Xcelium, add `+UVM_TESTNAME=axil_aes_test`, Run. See
-[`doc/VERIFICATION.md`](doc/VERIFICATION.md) for details on files, tests, and options.
+or Xcelium, add `+UVM_TESTNAME=axil_aes_test`, Run. For the **DPI-C** tests,
+enable "Use run.bash shell script" and paste `sim/run.bash` instead — it links
+`c_model/aes128.c` for you. See [`doc/VERIFICATION.md`](doc/VERIFICATION.md)
+for details on files, tests, and options.
 
 **Local / commercial simulator** (VCS / Xcelium / Questa) using the file list:
 
 ```sh
-# compile once (whole project is pulled in via `include)
-<sim> -sverilog -ntb_opts uvm-1.2 -f sim/filelist.f
+# compile once (whole project is pulled in via `include; link the C golden model)
+<sim> -sverilog -ntb_opts uvm-1.2 -f sim/filelist.f c_model/aes128.c
 # run any test
 ./simv +UVM_TESTNAME=axil_aes_test
 ```
@@ -88,19 +95,21 @@ A one-command regression + coverage script for VCS is in `sim/run_vcs.sh`.
 ## Project structure
 
 ```
-rtl/   design.sv (wrapper)         aes_rtl.sv (AES core)
-tb/    testbench.sv, axil_*.svh (one class per file), aes_ref_model.svh,
-       kat_*.dat (NIST AESAVS vectors)
-sim/   filelist.f, run scripts
-doc/   VERIFICATION.md (unified run guide and reports)
+rtl/      design.sv (wrapper)         aes_rtl.sv (AES core)
+tb/       testbench.sv, axil_*.svh (one class per file), aes_ref_model.svh,
+          aes_dpi.svh (DPI-C import), kat_*.dat (NIST AESAVS vectors)
+c_model/  aes128.c / .h (DPI-C golden), aes128_selftest.c, aes128_kat_check.c
+sim/      filelist.f, run scripts
+doc/      VERIFICATION.md (unified run guide and reports)
 ```
 
 ## What this demonstrates
 
 UVM environment architecture · constrained-random + functional/FSM/code
-coverage closure · independent reference modelling · SVA protocol checking ·
-AXI4-Lite protocol · coverage-driven verification and waiver justification ·
-simulator-portable, vendor-agnostic flow.
+coverage closure · independent reference modelling, in both SystemVerilog and
+C via DPI-C · SVA protocol checking · AXI4-Lite protocol · coverage-driven
+verification and waiver justification · simulator-portable, vendor-agnostic
+flow.
 
 ## License & attribution
 
