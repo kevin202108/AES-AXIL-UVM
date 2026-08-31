@@ -7,10 +7,16 @@
 //      axil_if.svh        axil_pkg.svh       axil_item.svh
 //      axil_driver.svh    axil_monitor.svh   axil_agent.svh
 //      axil_scoreboard.svh axil_env.svh      axil_sequences.svh
-//      axil_tests.svh
-//
-//  Run options (EDA Playground, VCS / Xcelium):
-//      +UVM_TESTNAME=axil_aes_test    (or axil_smoke_test)
+//      axil_tests.svh     aes_ref_model.svh  aes_dpi.svh
+//      axil_coverage.svh
+//  Design pane "+": aes_rtl.sv; for DPI-C also aes128.c (from c_model/).
+//  EDA Playground PRIMARY: enable "Use run.bash shell script", paste
+//  sim/run.bash (links aes128.c for VCS/Xcelium; runs dpi + dual-oracle rand).
+//  Without run.bash or Compile Options: Error-[DPI-DIFNF] (C not on vcs line).
+//  Fallback (no script): Compile Options = aes128.c
+//  Run options only matter when NOT using run.bash:
+//      +UVM_TESTNAME=axil_dpi_test
+//      +UVM_TESTNAME=axil_rand_test +NUM_BLOCKS=10
 // =============================================================================
 `timescale 1ns/1ps
 

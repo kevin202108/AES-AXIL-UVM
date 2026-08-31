@@ -14,7 +14,8 @@ package axil_pkg;
     `include "axil_scoreboard.svh"
     `include "axil_coverage.svh"
     `include "axil_env.svh"
-    `include "aes_ref_model.svh"    // independent AES-128 golden oracle
-    `include "axil_sequences.svh"   // base / smoke / aes / random sequences
-    `include "axil_tests.svh"       // base / smoke / aes / random tests
+    `include "aes_ref_model.svh"    // independent AES-128 golden oracle (SV)
+    `include "aes_dpi.svh"          // DPI-C import + wrappers (C model in c_model/)
+    `include "axil_sequences.svh"   // base / smoke / aes / random / dpi sequences
+    `include "axil_tests.svh"       // base / smoke / aes / random / dpi tests
 endpackage
